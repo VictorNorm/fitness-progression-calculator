@@ -42,6 +42,8 @@ const DEFAULT_EQUIPMENT_SETTINGS: UserEquipmentSettings = {
 
 // Constants
 const STARTING_HYPERTROPHY_REPS = 10; // Rep count to cycle back to after reaching MAX_REPS
+const LIGHT_DUMBBELL_MAX = 10; // Maximum weight for light dumbbells
+const LIGHT_DUMBBELL_INCREMENT = 1.0; // Increment for light dumbbells
 
 // Helper functions
 function isSpecialBodyweightExercise(exerciseName: string): boolean {
@@ -53,8 +55,14 @@ function isSpecialBodyweightExercise(exerciseName: string): boolean {
  */
 function getBaseIncrement(
 	equipmentType: ExerciseData["equipment_type"],
+	currentWeight: number,
 	userSettings: UserEquipmentSettings = DEFAULT_EQUIPMENT_SETTINGS,
 ): number {
+	// Special case for light dumbbells
+	if (equipmentType === "DUMBBELL" && currentWeight < LIGHT_DUMBBELL_MAX) {
+		return LIGHT_DUMBBELL_INCREMENT;
+	}
+
 	switch (equipmentType) {
 		case "BARBELL":
 			return (
@@ -83,6 +91,18 @@ function getBaseIncrement(
 		default:
 			return 2.5; // Default fallback
 	}
+}
+
+/**
+ * Rounds a weight to the nearest multiple of the increment
+ */
+function roundToIncrementMultiple(
+	weight: number,
+	equipmentType: ExerciseData["equipment_type"],
+	userSettings: UserEquipmentSettings = DEFAULT_EQUIPMENT_SETTINGS,
+): number {
+	const increment = getBaseIncrement(equipmentType, weight, userSettings);
+	return Math.round(weight / increment) * increment;
 }
 
 /**
@@ -174,7 +194,11 @@ export function calculateProgression(
 	}
 
 	// Get the base increment for this equipment type
-	const baseIncrement = getBaseIncrement(data.equipment_type, userSettings);
+	const baseIncrement = getBaseIncrement(
+		data.equipment_type,
+		data.weight,
+		userSettings,
+	);
 	console.log(`Using ${data.equipment_type} increment: ${baseIncrement}kg`);
 
 	// Calculate weight change based on rating
@@ -182,8 +206,15 @@ export function calculateProgression(
 
 	// For strength programs, focus on weight increases
 	if (programType === "STRENGTH") {
+		const rawNewWeight = Math.max(0, data.weight + weightChange);
+		// Round the weight to the nearest multiple of the increment
+		const roundedWeight = roundToIncrementMultiple(
+			rawNewWeight,
+			data.equipment_type,
+			userSettings,
+		);
 		return {
-			newWeight: Math.max(0, data.weight + weightChange),
+			newWeight: roundedWeight,
 			newReps: data.reps,
 		};
 	}
@@ -192,8 +223,14 @@ export function calculateProgression(
 
 	// For ratings 4 (Hard) and 5 (Too Hard), no rep increase, only potential weight decrease
 	if (data.rating >= 4) {
+		const rawNewWeight = Math.max(0, data.weight + weightChange);
+		const roundedWeight = roundToIncrementMultiple(
+			rawNewWeight,
+			data.equipment_type,
+			userSettings,
+		);
 		return {
-			newWeight: Math.max(0, data.weight + weightChange),
+			newWeight: roundedWeight,
 			newReps: data.reps,
 		};
 	}
@@ -210,8 +247,15 @@ export function calculateProgression(
 			data.weight * (MAX_REPS / STARTING_HYPERTROPHY_REPS) - data.weight;
 		const actualIncrement = Math.max(weightChange, volumeBasedIncrement);
 
+		const rawNewWeight = Math.max(0, data.weight + actualIncrement);
+		const roundedWeight = roundToIncrementMultiple(
+			rawNewWeight,
+			data.equipment_type,
+			userSettings,
+		);
+
 		return {
-			newWeight: Math.max(0, data.weight + actualIncrement),
+			newWeight: roundedWeight,
 			newReps: STARTING_HYPERTROPHY_REPS,
 		};
 	}
@@ -219,11 +263,16 @@ export function calculateProgression(
 	// For ratings 1-3 with non-maxed reps, compare volume increases
 
 	// Option 1: Increase weight
-	const newWeight = Math.max(0, data.weight + weightChange);
+	const rawNewWeight = Math.max(0, data.weight + weightChange);
+	const roundedNewWeight = roundToIncrementMultiple(
+		rawNewWeight,
+		data.equipment_type,
+		userSettings,
+	);
 	const volumeWithWeightIncrease = calculateVolume(
 		data.sets,
 		data.reps,
-		newWeight,
+		roundedNewWeight,
 	);
 
 	// Option 2: Increase reps
@@ -250,7 +299,7 @@ export function calculateProgression(
 	// For very easy (rating 1), always increase both weight and reps if compound
 	if (data.rating === 1 && data.is_compound) {
 		return {
-			newWeight: newWeight,
+			newWeight: roundedNewWeight,
 			newReps: Math.min(newReps, MAX_REPS),
 		};
 	}
@@ -259,7 +308,7 @@ export function calculateProgression(
 	// This helps make sure progression is steady and not too aggressive
 	if (volumeChangeWithWeight <= volumeChangeWithReps) {
 		return {
-			newWeight: newWeight,
+			newWeight: roundedNewWeight,
 			newReps: data.reps,
 		};
 	}
@@ -278,9 +327,7 @@ export function roundToClosestIncrement(
 	equipmentType: ExerciseData["equipment_type"],
 	userSettings: UserEquipmentSettings = DEFAULT_EQUIPMENT_SETTINGS,
 ): number {
-	const baseIncrement = getBaseIncrement(equipmentType, userSettings);
-	// Round to nearest multiple of baseIncrement
-	return Math.round(weight / baseIncrement) * baseIncrement;
+	return roundToIncrementMultiple(weight, equipmentType, userSettings);
 }
 
 export type { ExerciseData, ProgressionResult, UserEquipmentSettings };

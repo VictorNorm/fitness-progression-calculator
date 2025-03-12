@@ -21,7 +21,6 @@ interface UserEquipmentSettings {
 }
 /**
  * Main function to calculate progression based on exercise data and program type
- * Now accepts optional userSettings for equipment-specific increments
  */
 export declare function calculateProgression(data: ExerciseData, programType: "STRENGTH" | "HYPERTROPHY", userSettings?: UserEquipmentSettings): ProgressionResult;
 /**

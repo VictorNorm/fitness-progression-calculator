@@ -41,7 +41,7 @@ const DEFAULT_EQUIPMENT_SETTINGS: UserEquipmentSettings = {
 };
 
 // Constants
-const STARTING_HYPERTROPHY_REPS = 10; // Rep count to cycle back to after reaching MAX_REPS
+const CYCLING_TARGET_REPS = 15; // New target reps when cycling down from MAX_REPS
 const LIGHT_DUMBBELL_MAX = 10; // Maximum weight for light dumbbells
 const LIGHT_DUMBBELL_INCREMENT = 1.0; // Increment for light dumbbells
 
@@ -199,7 +199,7 @@ export function calculateProgression(
 		data.weight,
 		userSettings,
 	);
-	console.log(`Using ${data.equipment_type} increment: ${baseIncrement}kg`);
+	// console.log(`Using ${data.equipment_type} increment: ${baseIncrement}kg`);
 
 	// Calculate weight change based on rating
 	const weightChange = getWeightChangeForRating(data.rating, baseIncrement);
@@ -235,28 +235,61 @@ export function calculateProgression(
 		};
 	}
 
-	// If we've reached max reps, cycle back to starting reps with increased weight
+	// If we've reached max reps, cycle back to target reps with increased weight
 	if (data.reps >= MAX_REPS) {
-		// Calculate how much weight to increase to maintain volume
-		// Current volume: sets * maxReps * currentWeight
-		// New volume: sets * startingReps * newWeight
-		// So, newWeight = currentWeight * (maxReps / startingReps)
+		// Use a more conservative approach to weight increases when cycling reps
+		// The heavier the weight, the more conservative we become
 
-		// Ensure the weight increases by at least the rating-based increment
-		const volumeBasedIncrement =
-			data.weight * (MAX_REPS / STARTING_HYPERTROPHY_REPS) - data.weight;
-		const actualIncrement = Math.max(weightChange, volumeBasedIncrement);
+		// Base volume ratio (would be 20/15 = 1.33 if we maintained exact volume)
+		// Instead, we use a slightly reduced ratio to be more conservative
+		let volumeRatio: number;
 
-		const rawNewWeight = Math.max(0, data.weight + actualIncrement);
+		// Adjust conservativeness based on weight range
+		if (data.weight >= 100) {
+			// For heavy weights (100kg+), be very conservative (25% increase instead of 33%)
+			volumeRatio = 1.25;
+		} else if (data.weight >= 50) {
+			// For medium weights (50-100kg), be moderately conservative (28% increase)
+			volumeRatio = 1.28;
+		} else if (data.weight >= 20) {
+			// For lighter weights (20-50kg), be slightly conservative (30% increase)
+			volumeRatio = 1.3;
+		} else {
+			// For very light weights (<20kg), standard ratio is usually safe
+			volumeRatio = 1.33;
+		}
+
+		// For advanced users, be even more conservative
+		if (userSettings.experienceLevel === "ADVANCED") {
+			volumeRatio *= 0.95; // Reduce by 5% for advanced users
+		}
+
+		// Calculate ideal new weight with adjusted ratio
+		const idealNewWeight = data.weight * volumeRatio;
+
+		// Round to the nearest increment for the equipment type
 		const roundedWeight = roundToIncrementMultiple(
-			rawNewWeight,
+			idealNewWeight,
 			data.equipment_type,
 			userSettings,
 		);
 
+		// Log the details of the rep cycling calculation
+		// console.log("Rep cycling calculation:", {
+		// 	oldReps: data.reps,
+		// 	newReps: CYCLING_TARGET_REPS,
+		// 	oldWeight: data.weight,
+		// 	adjustedVolumeRatio: volumeRatio,
+		// 	idealNewWeight,
+		// 	roundedWeight,
+		// 	oldVolume: data.sets * data.reps * data.weight,
+		// 	newVolume: data.sets * CYCLING_TARGET_REPS * roundedWeight,
+		// 	experienceLevel: userSettings.experienceLevel,
+		// });
+
 		return {
 			newWeight: roundedWeight,
-			newReps: STARTING_HYPERTROPHY_REPS,
+			newReps: CYCLING_TARGET_REPS,
 		};
 	}
 
@@ -288,13 +321,13 @@ export function calculateProgression(
 	const volumeChangeWithWeight = volumeWithWeightIncrease - currentVolume;
 	const volumeChangeWithReps = volumeWithRepIncrease - currentVolume;
 
-	console.log("Volume comparison:", {
-		currentVolume,
-		volumeWithWeightIncrease,
-		volumeWithRepIncrease,
-		volumeChangeWithWeight,
-		volumeChangeWithReps,
-	});
+	// console.log("Volume comparison:", {
+	// 	currentVolume,
+	// 	volumeWithWeightIncrease,
+	// 	volumeWithRepIncrease,
+	// 	volumeChangeWithWeight,
+	// 	volumeChangeWithReps,
+	// });
 
 	// For very easy (rating 1), always increase both weight and reps if compound
 	if (data.rating === 1 && data.is_compound) {

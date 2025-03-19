@@ -27,11 +27,30 @@ function isSpecialBodyweightExercise(exerciseName) {
     return SPECIAL_BODYWEIGHT_EXERCISES.includes(exerciseName.toUpperCase());
 }
 /**
+ * Calculate weight change based on rating
+ */
+function getWeightChangeForRating(rating, baseIncrement) {
+    switch (rating) {
+        case 1: // Very easy
+            return baseIncrement * 3;
+        case 2: // Easy
+            return baseIncrement * 2;
+        case 3: // Moderate
+            return baseIncrement;
+        case 4: // Hard
+            return 0;
+        case 5: // Too hard
+            return -baseIncrement;
+        default:
+            return 0;
+    }
+}
+/**
  * Gets base increment for the given equipment type from user settings
  */
 function getBaseIncrement(equipmentType, currentWeight, userSettings = DEFAULT_EQUIPMENT_SETTINGS) {
-    // Special case for light dumbbells
-    if (equipmentType === "DUMBBELL" && currentWeight < LIGHT_DUMBBELL_MAX) {
+    // Always use 1kg increments for dumbbells 0-10kg
+    if (equipmentType === "DUMBBELL" && currentWeight <= 10) {
         return LIGHT_DUMBBELL_INCREMENT;
     }
     switch (equipmentType) {
@@ -52,6 +71,72 @@ function getBaseIncrement(equipmentType, currentWeight, userSettings = DEFAULT_E
         default:
             return 2.5; // Default fallback
     }
+}
+/**
+ * Determine maximum percentage increase based on exercise properties to cap increases
+ */
+function getMaxPercentageIncrease(currentWeight, isCompound, equipmentType, userSettings = DEFAULT_EQUIPMENT_SETTINGS) {
+    // Base percentage depends on exercise type and experience level
+    let maxPercentage;
+    // Get experience level from settings
+    const experienceLevel = userSettings.experienceLevel || "BEGINNER";
+    // Set base percentage based on compound/isolation and experience level
+    if (isCompound) {
+        switch (experienceLevel) {
+            case "BEGINNER":
+                maxPercentage = 15;
+                break;
+            case "INTERMEDIATE":
+                maxPercentage = 10;
+                break;
+            case "ADVANCED":
+                maxPercentage = 7.5;
+                break;
+            default:
+                maxPercentage = 15; // Default to beginner if unknown
+        }
+    }
+    else {
+        // Isolation exercises
+        switch (experienceLevel) {
+            case "BEGINNER":
+                maxPercentage = 12.5;
+                break;
+            case "INTERMEDIATE":
+                maxPercentage = 10;
+                break;
+            case "ADVANCED":
+                maxPercentage = 7.5;
+                break;
+            default:
+                maxPercentage = 12.5; // Default to beginner if unknown
+        }
+    }
+    // For lighter weights, allow even higher percentage increases
+    if (currentWeight < 10) {
+        maxPercentage *= 1.5; // e.g., 22.5% for beginner compounds
+    }
+    else if (currentWeight < 20) {
+        maxPercentage *= 1.25; // e.g., 18.75% for beginner compounds
+    }
+    // Special case for very light dumbbell exercises (like lateral raises)
+    // These can handle larger percentage increases when the weights are very light
+    if (equipmentType === "DUMBBELL" && currentWeight < 5) {
+        // Allow up to 25% increases for very light dumbbells (e.g., 2kg to 2.5kg)
+        maxPercentage = Math.max(maxPercentage, 25);
+    }
+    return maxPercentage;
+}
+/**
+ * Apply percentage-based caps to weight increases
+ */
+function applyPercentageCap(currentWeight, proposedWeight, isCompound, equipmentType, userSettings = DEFAULT_EQUIPMENT_SETTINGS) {
+    // Get max percentage increase for this exercise
+    const maxPercent = getMaxPercentageIncrease(currentWeight, isCompound, equipmentType, userSettings);
+    // Calculate the maximum allowed weight
+    const maxAllowedWeight = currentWeight * (1 + maxPercent / 100);
+    // Return the smaller of the proposed weight and maximum allowed weight
+    return Math.min(proposedWeight, maxAllowedWeight);
 }
 /**
  * Rounds a weight to the nearest multiple of the increment
@@ -100,25 +185,6 @@ function handleBodyweightExercise(data) {
     }
 }
 /**
- * Calculate weight change based on rating
- */
-function getWeightChangeForRating(rating, baseIncrement) {
-    switch (rating) {
-        case 1: // Very easy
-            return baseIncrement * 3;
-        case 2: // Easy
-            return baseIncrement * 2;
-        case 3: // Moderate
-            return baseIncrement;
-        case 4: // Hard
-            return 0;
-        case 5: // Too hard
-            return -baseIncrement;
-        default:
-            return 0;
-    }
-}
-/**
  * Main function to calculate progression based on exercise data and program type
  */
 function calculateProgression(data, programType, userSettings = DEFAULT_EQUIPMENT_SETTINGS) {
@@ -136,29 +202,21 @@ function calculateProgression(data, programType, userSettings = DEFAULT_EQUIPMEN
     }
     // Get the base increment for this equipment type
     const baseIncrement = getBaseIncrement(data.equipment_type, data.weight, userSettings);
-    // console.log(`Using ${data.equipment_type} increment: ${baseIncrement}kg`);
     // Calculate weight change based on rating
     const weightChange = getWeightChangeForRating(data.rating, baseIncrement);
     // For strength programs, focus on weight increases
     if (programType === "STRENGTH") {
         const rawNewWeight = Math.max(0, data.weight + weightChange);
+        // Apply percentage cap to prevent excessive increases
+        const cappedWeight = applyPercentageCap(data.weight, rawNewWeight, data.is_compound, data.equipment_type, userSettings);
         // Round the weight to the nearest multiple of the increment
-        const roundedWeight = roundToIncrementMultiple(rawNewWeight, data.equipment_type, userSettings);
+        const roundedWeight = roundToIncrementMultiple(cappedWeight, data.equipment_type, userSettings);
         return {
             newWeight: roundedWeight,
             newReps: data.reps,
         };
     }
     // HYPERTROPHY program logic
-    // For ratings 4 (Hard) and 5 (Too Hard), no rep increase, only potential weight decrease
-    if (data.rating >= 4) {
-        const rawNewWeight = Math.max(0, data.weight + weightChange);
-        const roundedWeight = roundToIncrementMultiple(rawNewWeight, data.equipment_type, userSettings);
-        return {
-            newWeight: roundedWeight,
-            newReps: data.reps,
-        };
-    }
     // If we've reached max reps, cycle back to target reps with increased weight
     if (data.reps >= MAX_REPS) {
         // Use a more conservative approach to weight increases when cycling reps
@@ -189,63 +247,90 @@ function calculateProgression(data, programType, userSettings = DEFAULT_EQUIPMEN
         }
         // Calculate ideal new weight with adjusted ratio
         const idealNewWeight = data.weight * volumeRatio;
+        // Apply percentage-based cap
+        const cappedWeight = applyPercentageCap(data.weight, idealNewWeight, data.is_compound, data.equipment_type, userSettings);
         // Round to the nearest increment for the equipment type
-        const roundedWeight = roundToIncrementMultiple(idealNewWeight, data.equipment_type, userSettings);
-        // Log the details of the rep cycling calculation
-        // console.log("Rep cycling calculation:", {
-        // 	oldReps: data.reps,
-        // 	newReps: CYCLING_TARGET_REPS,
-        // 	oldWeight: data.weight,
-        // 	adjustedVolumeRatio: volumeRatio,
-        // 	idealNewWeight,
-        // 	roundedWeight,
-        // 	oldVolume: data.sets * data.reps * data.weight,
-        // 	newVolume: data.sets * CYCLING_TARGET_REPS * roundedWeight,
-        // 	experienceLevel: userSettings.experienceLevel,
-        // });
+        const roundedWeight = roundToIncrementMultiple(cappedWeight, data.equipment_type, userSettings);
         return {
             newWeight: roundedWeight,
             newReps: CYCLING_TARGET_REPS,
         };
     }
-    // For ratings 1-3 with non-maxed reps, compare volume increases
-    // Option 1: Increase weight
-    const rawNewWeight = Math.max(0, data.weight + weightChange);
-    const roundedNewWeight = roundToIncrementMultiple(rawNewWeight, data.equipment_type, userSettings);
-    const volumeWithWeightIncrease = calculateVolume(data.sets, data.reps, roundedNewWeight);
-    // Option 2: Increase reps
-    const newReps = data.reps + 1;
-    const volumeWithRepIncrease = calculateVolume(data.sets, newReps, data.weight);
-    // Calculate volume change for each option
-    const currentVolume = calculateVolume(data.sets, data.reps, data.weight);
-    const volumeChangeWithWeight = volumeWithWeightIncrease - currentVolume;
-    const volumeChangeWithReps = volumeWithRepIncrease - currentVolume;
-    // console.log("Volume comparison:", {
-    // 	currentVolume,
-    // 	volumeWithWeightIncrease,
-    // 	volumeWithRepIncrease,
-    // 	volumeChangeWithWeight,
-    // 	volumeChangeWithReps,
-    // });
-    // For very easy (rating 1), always increase both weight and reps if compound
-    if (data.rating === 1 && data.is_compound) {
+    // For ratings 4 (Hard) and 5 (Too Hard)
+    if (data.rating >= 4) {
+        const rawNewWeight = Math.max(0, data.weight + weightChange);
+        const roundedWeight = roundToIncrementMultiple(rawNewWeight, data.equipment_type, userSettings);
         return {
-            newWeight: roundedNewWeight,
-            newReps: Math.min(newReps, MAX_REPS),
-        };
-    }
-    // For other cases, choose the option with the smaller volume increase
-    // This helps make sure progression is steady and not too aggressive
-    if (volumeChangeWithWeight <= volumeChangeWithReps) {
-        return {
-            newWeight: roundedNewWeight,
+            newWeight: roundedWeight,
             newReps: data.reps,
         };
     }
-    return {
+    // Prepare options for progression
+    const rawNewWeight = Math.max(0, data.weight + weightChange);
+    // Apply percentage cap to prevent excessive increases
+    const cappedWeight = applyPercentageCap(data.weight, rawNewWeight, data.is_compound, data.equipment_type, userSettings);
+    const roundedNewWeight = roundToIncrementMultiple(cappedWeight, data.equipment_type, userSettings);
+    const newReps = Math.min(data.reps + 1, MAX_REPS);
+    // Calculate current volume
+    const currentVolume = calculateVolume(data.sets, data.reps, data.weight);
+    // Calculate volumes for different progression options
+    const volumeWithWeightIncrease = calculateVolume(data.sets, data.reps, roundedNewWeight);
+    const volumeWithRepIncrease = calculateVolume(data.sets, newReps, data.weight);
+    // Use per-unit efficiency calculations
+    const weightDelta = roundedNewWeight - data.weight;
+    const repDelta = newReps - data.reps;
+    // Efficiency is volume increase per unit of change (per kg or per rep)
+    const weightEfficiency = weightDelta > 0
+        ? (volumeWithWeightIncrease - currentVolume) / weightDelta
+        : 0;
+    const repEfficiency = repDelta > 0 ? (volumeWithRepIncrease - currentVolume) / repDelta : 0;
+    // Option objects for cleaner code
+    const increaseBoth = {
+        newWeight: roundedNewWeight,
+        newReps: newReps,
+    };
+    const increaseWeightOnly = {
+        newWeight: roundedNewWeight,
+        newReps: data.reps,
+    };
+    const increaseRepsOnly = {
         newWeight: data.weight,
         newReps: newReps,
     };
+    const noChange = {
+        newWeight: data.weight,
+        newReps: data.reps,
+    };
+    // For ratings 1-3 with guaranteed different outcomes
+    switch (data.rating) {
+        case 1: // Very Easy
+            // For compounds, always increase both
+            if (data.is_compound) {
+                return increaseBoth;
+            }
+            // For isolations, strongly prefer weight but use both if weight efficiency is high
+            if (weightEfficiency > 0 && weightEfficiency >= repEfficiency * 0.75) {
+                // Weight efficiency is good enough to include
+                return increaseBoth;
+            }
+            // Otherwise fall back to rep increase only
+            return increaseRepsOnly;
+        case 2: // Easy
+            // Rating 2 is distinctly weight-focused
+            if (weightDelta === 0 || repEfficiency > weightEfficiency * 1.5) {
+                return increaseRepsOnly;
+            }
+            return increaseWeightOnly;
+        case 3: // Moderate
+            // Rating 3 is distinctly rep-focused
+            if (repDelta === 0 || weightEfficiency > repEfficiency * 1.5) {
+                return increaseWeightOnly;
+            }
+            return increaseRepsOnly;
+        default:
+            // Should never get here (covered by previous conditions)
+            return noChange;
+    }
 }
 /**
  * Helper function to round weight to closest available increment

@@ -441,38 +441,131 @@ export function calculateProgression(
 	};
 
 	// For ratings 1-3 with guaranteed different outcomes
+	// Final solution that ensures distinct outcomes while respecting percentage caps
+
 	switch (data.rating) {
-		case 1: // Very Easy
-			// For compounds, always increase both
-			if (data.is_compound) {
-				return increaseBoth;
-			}
+		case 1: {
+			// Very Easy - Weight gain with rep increase fallback
+			// For "Very Easy", attempt significant weight increase (2 increments)
+			const veryEasyTargetWeight = data.weight + baseIncrement * 2;
 
-			// For isolations, strongly prefer weight but use both if weight efficiency is high
-			if (weightEfficiency > 0 && weightEfficiency >= repEfficiency * 0.75) {
-				// Weight efficiency is good enough to include
-				return increaseBoth;
-			}
-			// Otherwise fall back to rep increase only
-			return increaseRepsOnly;
+			// Apply percentage cap to prevent excessive increases
+			const cappedVeryEasyWeight = applyPercentageCap(
+				data.weight,
+				veryEasyTargetWeight,
+				data.is_compound,
+				data.equipment_type,
+				userSettings,
+			);
 
-		case 2: // Easy
-			// Rating 2 is distinctly weight-focused
-			if (weightDelta === 0 || repEfficiency > weightEfficiency * 1.5) {
-				return increaseRepsOnly;
-			}
-			return increaseWeightOnly;
+			// Round to valid equipment increments
+			const roundedVeryEasyWeight = roundToIncrementMultiple(
+				cappedVeryEasyWeight,
+				data.equipment_type,
+				userSettings,
+			);
 
-		case 3: // Moderate
-			// Rating 3 is distinctly rep-focused
-			if (repDelta === 0 || weightEfficiency > repEfficiency * 1.5) {
-				return increaseWeightOnly;
+			// Check if this results in a meaningful weight increase
+			if (roundedVeryEasyWeight > data.weight) {
+				// If we got a weight increase, use it
+				return {
+					newWeight: roundedVeryEasyWeight,
+					newReps: data.reps, // Keep reps the same
+				};
 			}
-			return increaseRepsOnly;
+			// If weight couldn't increase due to caps, increase reps AND weight
+			// This ensures Rating 1 is always different from Rating 2 & 3
+			const easyTargetWeight = data.weight + baseIncrement;
+			const cappedEasyWeight = applyPercentageCap(
+				data.weight,
+				easyTargetWeight,
+				data.is_compound,
+				data.equipment_type,
+				userSettings,
+			);
+			const roundedEasyWeight = roundToIncrementMultiple(
+				cappedEasyWeight,
+				data.equipment_type,
+				userSettings,
+			);
+
+			return {
+				newWeight: roundedEasyWeight,
+				newReps: Math.min(data.reps + 1, MAX_REPS),
+			};
+		}
+
+		case 2: {
+			// Easy - Weight increase only
+			// For "Easy", add 1 increment of weight
+			const easyTargetWeight = data.weight + baseIncrement;
+
+			// Apply percentage cap
+			const cappedEasyWeight = applyPercentageCap(
+				data.weight,
+				easyTargetWeight,
+				data.is_compound,
+				data.equipment_type,
+				userSettings,
+			);
+
+			// Round to valid equipment increments
+			const roundedEasyWeight = roundToIncrementMultiple(
+				cappedEasyWeight,
+				data.equipment_type,
+				userSettings,
+			);
+
+			// Check if this results in a meaningful weight increase
+			if (roundedEasyWeight > data.weight) {
+				// If we got a weight increase, use it
+				return {
+					newWeight: roundedEasyWeight,
+					newReps: data.reps, // Keep reps the same
+				};
+			}
+			// If weight couldn't increase, keep weight the same
+			// This ensures Rating 2 is always different from Rating 3
+			return {
+				newWeight: data.weight,
+				newReps: data.reps, // No change
+			};
+		}
+
+		case 3: // Moderate - Rep increase only
+			// For "Moderate", keep the weight the same but increase reps
+			return {
+				newWeight: data.weight,
+				newReps: Math.min(data.reps + 1, MAX_REPS),
+			};
+
+		case 4: // Hard - No change
+			return {
+				newWeight: data.weight,
+				newReps: data.reps,
+			};
+
+		case 5: {
+			// Too Hard - Decrease weight
+			// For "Too Hard", decrease by one increment
+			const tooHardWeight = Math.max(0, data.weight - baseIncrement);
+			const roundedTooHardWeight = roundToIncrementMultiple(
+				tooHardWeight,
+				data.equipment_type,
+				userSettings,
+			);
+
+			return {
+				newWeight: roundedTooHardWeight,
+				newReps: data.reps,
+			};
+		}
 
 		default:
-			// Should never get here (covered by previous conditions)
-			return noChange;
+			return {
+				newWeight: data.weight,
+				newReps: data.reps,
+			};
 	}
 }
 

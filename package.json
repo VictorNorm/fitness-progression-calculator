@@ -1,6 +1,6 @@
 {
 	"name": "fitness-progression-calculator",
-	"version": "1.6.2",
+	"version": "1.6.3",
 	"description": "Workout progression calculator for fitness applications",
 	"main": "dist/index.js",
 	"types": "dist/index.d.ts",

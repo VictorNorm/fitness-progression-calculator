@@ -188,13 +188,6 @@ function handleBodyweightExercise(data) {
  * Main function to calculate progression based on exercise data and program type
  */
 function calculateProgression(data, programType, userSettings = DEFAULT_EQUIPMENT_SETTINGS) {
-    console.log(`Calculate progression for ${data.exercise_name}:`, {
-        currentWeight: data.weight,
-        currentReps: data.reps,
-        rating: data.rating,
-        equipmentType: data.equipment_type,
-        programType,
-    });
     // Special handling for bodyweight exercises
     if (data.equipment_type === "BODYWEIGHT" &&
         isSpecialBodyweightExercise(data.exercise_name)) {

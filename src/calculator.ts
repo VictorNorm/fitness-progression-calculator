@@ -249,13 +249,6 @@ export function calculateProgression(
 	programType: ProgramType,
 	userSettings: UserEquipmentSettings = DEFAULT_EQUIPMENT_SETTINGS,
 ): ProgressionResult {
-	console.log(`Calculate progression for ${data.exercise_name}:`, {
-		currentWeight: data.weight,
-		currentReps: data.reps,
-		rating: data.rating,
-		equipmentType: data.equipment_type,
-		programType,
-	});
 
 	// Special handling for bodyweight exercises
 	if (

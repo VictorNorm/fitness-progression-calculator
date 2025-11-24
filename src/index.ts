@@ -1,28 +1,20 @@
-import type {
-	ExerciseData,
-	ProgressionResult,
-	ProgramType,
-	UserEquipmentSettings,
-} from "./types";
-import {
-	calculateProgression as rawCalculateProgression,
-	roundToClosestIncrement,
-} from "./calculator";
+// Main function
+export { calculateProgression } from './calculator';
 
-// Re-export the main function
-export function calculateProgression(
-	data: ExerciseData,
-	programType: ProgramType,
-	userSettings?: UserEquipmentSettings,
-): ProgressionResult {
-	return rawCalculateProgression(data, programType, userSettings);
-}
-
-// Export types and helper functions
+// Types
 export type {
-	ExerciseData,
-	ProgressionResult,
-	ProgramType,
-	UserEquipmentSettings,
-};
-export { roundToClosestIncrement };
+  ExerciseData,
+  ProgressionResult,
+  ProgressionSuggestion,
+  ProgramType,
+  EquipmentType,
+  UserEquipmentSettings,
+  ExerciseConfig,
+} from './types';
+
+// Constants (for consumers who need them)
+export {
+  MIN_REPS,
+  MAX_REPS,
+  DEFAULT_SETTINGS,
+} from './constants';

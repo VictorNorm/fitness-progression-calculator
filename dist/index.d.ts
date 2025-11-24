@@ -1,5 +1,3 @@
-import type { ExerciseData, ProgressionResult, ProgramType, UserEquipmentSettings } from "./types";
-import { roundToClosestIncrement } from "./calculator";
-export declare function calculateProgression(data: ExerciseData, programType: ProgramType, userSettings?: UserEquipmentSettings): ProgressionResult;
-export type { ExerciseData, ProgressionResult, ProgramType, UserEquipmentSettings, };
-export { roundToClosestIncrement };
+export { calculateProgression } from './calculator';
+export type { ExerciseData, ProgressionResult, ProgressionSuggestion, ProgramType, EquipmentType, UserEquipmentSettings, ExerciseConfig, } from './types';
+export { MIN_REPS, MAX_REPS, DEFAULT_SETTINGS, } from './constants';
